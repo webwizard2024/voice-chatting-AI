@@ -1,28 +1,34 @@
 import streamlit as st
-import speech_recognition as sr
-import google.generativeai as genai
 import os
 from dotenv import load_dotenv
-from gtts import gTTS
 import io
 import re
 
+# Try to import optional packages with fallbacks
+try:
+    import speech_recognition as sr
+    SR_AVAILABLE = True
+except ImportError:
+    SR_AVAILABLE = False
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+
+try:
+    from gtts import gTTS
+    GTTS_AVAILABLE = True
+except ImportError:
+    GTTS_AVAILABLE = False
+
 # --- Setup ---
 load_dotenv()
-# Check if API key is available
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    st.error("API key not found. Please set GEMINI_API_KEY in your environment or secrets.")
-    st.stop()
 
-genai.configure(api_key=api_key)
-
-# Use a more stable model name for production
-try:
-    model = genai.GenerativeModel("gemini-2.5-flash")  # Changed from gemini-2.5-flash
-except:
-    st.error("Failed to initialize the model. Check your API key and model name.")
-    st.stop()
+if GENAI_AVAILABLE:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel("gemini-2.5-flash")  # Changed to a more stable model
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -32,17 +38,18 @@ st.set_page_config(page_title="Smart Voice Chat", page_icon="🎤", layout="wide
 st.title("🎤 Smart Voice Chat")
 st.caption("👂 Speak → 🔊 Hear")
 
+# Check package availability
+if not SR_AVAILABLE:
+    st.error("Speech recognition package is not installed. Please check your requirements.txt")
+if not GENAI_AVAILABLE:
+    st.error("Google Generative AI package is not installed. Please check your requirements.txt")
+if not GTTS_AVAILABLE:
+    st.error("gTTS package is not installed. Please check your requirements.txt")
+
 # --- Processing ---
-# Add a fallback for audio input in case it's not supported
-audio_file = None
-try:
+user_text = ""
+if SR_AVAILABLE:
     audio_file = st.audio_input("🎤 Hold to speak")
-except Exception as e:
-    st.warning(f"Audio input might not be supported in this environment: {str(e)}")
-
-text_input = st.chat_input("💬 Or type")
-
-if audio_file or text_input:
     if audio_file:
         try:
             audio_bytes = audio_file.read()
@@ -60,12 +67,16 @@ if audio_file or text_input:
         except Exception as e:
             st.error(f"Error processing audio: {str(e)}")
             user_text = "Error processing audio. Please try typing instead."
-    else:
-        user_text = text_input
 
+# Always provide text input as an option
+text_input = st.chat_input("💬 Or type")
+if text_input:
+    user_text = text_input
+
+if user_text:
     st.session_state.messages.append({"role": "user", "content": user_text})
 
-    # ✅ FIXED SYSTEM PROMPT - General knowledge OK, realtime NO
+    # System prompt
     system_prompt = """You are a helpful voice assistant.
 
 RULES:
@@ -83,17 +94,20 @@ RULES:
 
 User: {user_text}"""
 
-    # Generate smart response with error handling
-    try:
-        full_response = ""
-        response = model.generate_content(system_prompt.format(user_text=user_text), stream=True)
-        for chunk in response:
-            full_response += chunk.text
-    except Exception as e:
-        st.error(f"Error generating response: {str(e)}")
-        full_response = "I'm having trouble generating a response right now. Please try again."
+    # Generate response
+    if GENAI_AVAILABLE:
+        try:
+            full_response = ""
+            response = model.generate_content(system_prompt.format(user_text=user_text), stream=True)
+            for chunk in response:
+                full_response += chunk.text
+        except Exception as e:
+            st.error(f"Error generating response: {str(e)}")
+            full_response = "I'm having trouble generating a response right now. Please try again."
+    else:
+        full_response = "Google Generative AI is not available. Please check your installation."
 
-    # Clean for perfect voice
+    # Clean for voice
     def clean_voice(text):
         text = re.sub(r'\*\*(.*?)\*\*|\*(.*?)\*|`(.*?)`|__(.*?)__', r'\1', text)
         text = re.sub(r'[^\w\s\.\!\?,\-]', '', text)
@@ -101,21 +115,24 @@ User: {user_text}"""
 
     voice_text = clean_voice(full_response)
     
-    # Play voice only with error handling
-    try:
-        with st.spinner("🔊 Responding..."):
-            tts = gTTS(voice_text, lang="en", slow=False)
-            audio_buffer = io.BytesIO()
-            tts.write_to_fp(audio_buffer)
-            audio_data = audio_buffer.getvalue()
-        
-        st.audio(audio_data, format="audio/mp3", autoplay=True)
-        st.session_state.messages.append({"role": "assistant", "content": voice_text, "audio": audio_data})
-    except Exception as e:
-        st.error(f"Error generating speech: {str(e)}")
+    # Play voice
+    if GTTS_AVAILABLE:
+        try:
+            with st.spinner("🔊 Responding..."):
+                tts = gTTS(voice_text, lang="en", slow=False)
+                audio_buffer = io.BytesIO()
+                tts.write_to_fp(audio_buffer)
+                audio_data = audio_buffer.getvalue()
+            
+            st.audio(audio_data, format="audio/mp3", autoplay=True)
+            st.session_state.messages.append({"role": "assistant", "content": voice_text, "audio": audio_data})
+        except Exception as e:
+            st.error(f"Error generating speech: {str(e)}")
+            st.session_state.messages.append({"role": "assistant", "content": voice_text})
+    else:
         st.session_state.messages.append({"role": "assistant", "content": voice_text})
 
-# Simple Sidebar
+# Sidebar
 with st.sidebar:
     if st.button("🗑️ Clear History"):
         st.session_state.messages = []
@@ -123,9 +140,8 @@ with st.sidebar:
     
     st.caption("✅ Smart answers + honest limits!")
     
-    # Add model info
-    st.caption(f"Model: gemini-pro")
-    
-    # Add session info
-    if len(st.session_state.messages) > 0:
-        st.caption(f"Messages: {len(st.session_state.messages)}")
+    # Package status
+    st.subheader("Package Status")
+    st.write(f"Speech Recognition: {'✅' if SR_AVAILABLE else '❌'}")
+    st.write(f"Google Generative AI: {'✅' if GENAI_AVAILABLE else '❌'}")
+    st.write(f"gTTS: {'✅' if GTTS_AVAILABLE else '❌'}")
