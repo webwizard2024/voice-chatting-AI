@@ -3,7 +3,7 @@ import os
 import io
 import re
 
-# Try importing optional packages with error handling
+# Try importing SpeechRecognition with the correct package name
 try:
     import speech_recognition as sr
     SR_AVAILABLE = True
