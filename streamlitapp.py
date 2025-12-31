@@ -152,7 +152,7 @@ with col1:
     text_input = st.chat_input("Type your message here...")
 
 with col2:
-    audio_file = st.audio_input("🎤 Record audio", label_visibility="visible")
+    audio_file = st.file_uploader("Upload audio file", type=["wav", "mp3", "m4a"])
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -277,4 +277,4 @@ with st.sidebar:
     # Add a tip
     st.markdown("---")
     st.markdown("### 💡 Tip")
-    st.caption("For best results, speak clearly and avoid background noise.")
+    st.caption("For best results, upload clear audio files without background noise.")
