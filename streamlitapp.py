@@ -41,6 +41,9 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "transcript" not in st.session_state:
+    st.session_state.transcript = ""
+
 # Page configuration
 st.set_page_config(
     page_title="Smart Voice Chat", 
@@ -110,6 +113,39 @@ st.markdown("""
     .chat-container::-webkit-scrollbar-thumb:hover {
         background: #555;
     }
+    .mic-button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        font-size: 24px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto;
+        transition: background-color 0.3s;
+    }
+    .mic-button:hover {
+        background-color: #0056b3;
+    }
+    .mic-button.recording {
+        background-color: #dc3545;
+        animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+        0% {
+            box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7);
+        }
+        70% {
+            box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+        }
+        100% {
+            box-shadow: 0 0 0 0 rgba(220, 53, 69, 0);
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -117,7 +153,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎤 Smart Voice Chat</h1>
-    <p style="font-size: 1.1rem; margin-top: 0.5rem;">💬 Type → 🔊 Hear</p>
+    <p style="font-size: 1.1rem; margin-top: 0.5rem;">👂 Speak → 🔊 Hear</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -136,23 +172,116 @@ else:
     st.markdown("""
     <div style="text-align: center; padding: 3rem; color: #6c757d;">
         <h3>👋 Welcome to Smart Voice Chat!</h3>
-        <p>Start a conversation by typing below.</p>
+        <p>Start a conversation by speaking or typing below.</p>
     </div>
     """, unsafe_allow_html=True)
 
 # Input section
 st.markdown('<div class="input-section">', unsafe_allow_html=True)
-st.markdown("### 💬 Type your message")
+st.markdown("### 🎤 Speak or 💬 Type")
 
 # Text input
 user_input = st.chat_input("Type your message here...")
 
+# Voice input using Web Speech API
+st.markdown("""
+<div style="text-align: center; margin: 1rem 0;">
+    <button id="mic-button" class="mic-button">🎤</button>
+    <p id="transcript" style="margin-top: 1rem; min-height: 1.5rem;"></p>
+</div>
+""", unsafe_allow_html=True)
+
+# JavaScript for Web Speech API
+st.markdown("""
+<script>
+const micButton = document.getElementById('mic-button');
+const transcriptElement = document.getElementById('transcript');
+let recognition;
+let isRecording = false;
+
+// Check if browser supports Speech Recognition
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    
+    recognition.onstart = function() {
+        isRecording = true;
+        micButton.classList.add('recording');
+        micButton.innerHTML = '⏹️';
+        transcriptElement.textContent = 'Listening...';
+    };
+    
+    recognition.onresult = function(event) {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+        }
+        transcriptElement.textContent = transcript;
+        
+        // If this is a final result, update the transcript in the session state
+        if (event.results[event.results.length - 1].isFinal) {
+            // Create a hidden input to trigger a rerun
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'voice_transcript';
+            hiddenInput.value = transcript;
+            document.body.appendChild(hiddenInput);
+            
+            // Trigger a change event on the hidden input
+            const event = new Event('change', { bubbles: true });
+            hiddenInput.dispatchEvent(event);
+        }
+    };
+    
+    recognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+        transcriptElement.textContent = 'Error: ' + event.error;
+        stopRecording();
+    };
+    
+    recognition.onend = function() {
+        stopRecording();
+    };
+    
+    function stopRecording() {
+        isRecording = false;
+        micButton.classList.remove('recording');
+        micButton.innerHTML = '🎤';
+    }
+    
+    micButton.addEventListener('click', function() {
+        if (isRecording) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+} else {
+    transcriptElement.textContent = 'Speech recognition not supported in this browser.';
+    micButton.disabled = true;
+}
+</script>
+""", unsafe_allow_html=True)
+
+# Get voice transcript from JavaScript
+voice_transcript = st.text_input("", key="voice_transcript", label_visibility="collapsed")
+
+# Use either voice transcript or text input
+user_text = voice_transcript if voice_transcript else user_input
+
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Processing
-if user_input:
+if user_text:
+    # Clear the voice transcript
+    st.session_state.transcript = ""
+    
     # Add user message to session state
-    st.session_state.messages.append({"role": "user", "content": user_input})
+    st.session_state.messages.append({"role": "user", "content": user_text})
 
     # System prompt
     system_prompt = """You are a helpful voice assistant.
@@ -176,7 +305,7 @@ User: {user_text}"""
     with st.spinner("🤔 Thinking..."):
         try:
             full_response = ""
-            for chunk in model.generate_content(system_prompt.format(user_text=user_input), stream=True):
+            for chunk in model.generate_content(system_prompt.format(user_text=user_text), stream=True):
                 full_response += chunk.text
 
             # Clean for voice
@@ -246,4 +375,4 @@ with st.sidebar:
     # Add a tip
     st.markdown("---")
     st.markdown("### 💡 Tip")
-    st.caption("Type your questions clearly for better responses.")
+    st.caption("Click the microphone button to speak, or type your message directly.")
