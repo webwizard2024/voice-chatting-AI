@@ -1,22 +1,40 @@
 import streamlit as st
-import speech_recognition as sr
-import google.generativeai as genai
 import os
-# Remove dotenv import as we'll use Streamlit secrets instead
-from gtts import gTTS
 import io
 import re
 
+# Try importing optional packages with error handling
+try:
+    import speech_recognition as sr
+    SR_AVAILABLE = True
+except ImportError:
+    SR_AVAILABLE = False
+    st.error("Speech recognition package is not installed. Please check your requirements.txt")
+
+try:
+    import google.generativeai as genai
+    GENAI_AVAILABLE = True
+except ImportError:
+    GENAI_AVAILABLE = False
+    st.error("Google Generative AI package is not installed. Please check your requirements.txt")
+
+try:
+    from gtts import gTTS
+    GTTS_AVAILABLE = True
+except ImportError:
+    GTTS_AVAILABLE = False
+    st.error("gTTS package is not installed. Please check your requirements.txt")
+
 # --- Setup ---
-# Replace dotenv with Streamlit secrets
 try:
     api_key = st.secrets["GEMINI_API_KEY"]
 except KeyError:
     st.error("API key not found. Please set GEMINI_API_KEY in your Streamlit secrets.")
     st.stop()
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-2.5-flash")
+if GENAI_AVAILABLE:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -27,10 +45,9 @@ st.title("🎤 Smart Voice Chat")
 st.caption("👂 Speak → 🔊 Hear")
 
 # --- Processing ---
-audio_file = st.audio_input("🎤 Hold to speak")
-text_input = st.chat_input("💬 Or type")
-
-if audio_file or text_input:
+user_text = ""
+if SR_AVAILABLE:
+    audio_file = st.audio_input("🎤 Hold to speak")
     if audio_file:
         audio_bytes = audio_file.read()
         recognizer = sr.Recognizer()
@@ -42,9 +59,12 @@ if audio_file or text_input:
             user_text = recognizer.recognize_google(audio_data)
         except:
             user_text = "Sorry, try again."
-    else:
-        user_text = text_input
 
+text_input = st.chat_input("💬 Or type")
+if text_input:
+    user_text = text_input
+
+if user_text:
     st.session_state.messages.append({"role": "user", "content": user_text})
 
     # ✅ FIXED SYSTEM PROMPT - General knowledge OK, realtime NO
@@ -66,9 +86,12 @@ RULES:
 User: {user_text}"""
 
     # Generate smart response
-    full_response = ""
-    for chunk in model.generate_content(system_prompt.format(user_text=user_text), stream=True):
-        full_response += chunk.text
+    if GENAI_AVAILABLE:
+        full_response = ""
+        for chunk in model.generate_content(system_prompt.format(user_text=user_text), stream=True):
+            full_response += chunk.text
+    else:
+        full_response = "Google Generative AI is not available. Please check your installation."
 
     # Clean for perfect voice
     def clean_voice(text):
@@ -79,14 +102,17 @@ User: {user_text}"""
     voice_text = clean_voice(full_response)
     
     # Play voice only
-    with st.spinner("🔊 Responding..."):
-        tts = gTTS(voice_text, lang="en", slow=False)
-        audio_buffer = io.BytesIO()
-        tts.write_to_fp(audio_buffer)
-        audio_data = audio_buffer.getvalue()
-    
-    st.audio(audio_data, autoplay=True)
-    st.session_state.messages.append({"role": "assistant", "content": voice_text, "audio": audio_data})
+    if GTTS_AVAILABLE:
+        with st.spinner("🔊 Responding..."):
+            tts = gTTS(voice_text, lang="en", slow=False)
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_data = audio_buffer.getvalue()
+        
+        st.audio(audio_data, autoplay=True)
+        st.session_state.messages.append({"role": "assistant", "content": voice_text, "audio": audio_data})
+    else:
+        st.session_state.messages.append({"role": "assistant", "content": voice_text})
 
 # Simple Sidebar
 with st.sidebar:
