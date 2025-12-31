@@ -1,12 +1,10 @@
 import streamlit as st
-import speech_recognition as sr
 import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 from gtts import gTTS
 import io
 import re
-import tempfile
 
 # --- Setup with Streamlit Secrets ---
 # Try to get API key from Streamlit secrets first, then fallback to .env for local development
@@ -119,7 +117,7 @@ st.markdown("""
 st.markdown("""
 <div class="main-header">
     <h1>🎤 Smart Voice Chat</h1>
-    <p style="font-size: 1.1rem; margin-top: 0.5rem;">👂 Speak → 🔊 Hear</p>
+    <p style="font-size: 1.1rem; margin-top: 0.5rem;">💬 Type → 🔊 Hear</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -138,52 +136,23 @@ else:
     st.markdown("""
     <div style="text-align: center; padding: 3rem; color: #6c757d;">
         <h3>👋 Welcome to Smart Voice Chat!</h3>
-        <p>Start a conversation by speaking or typing below.</p>
+        <p>Start a conversation by typing below.</p>
     </div>
     """, unsafe_allow_html=True)
 
 # Input section
 st.markdown('<div class="input-section">', unsafe_allow_html=True)
-st.markdown("### 🎤 Speak or 💬 Type")
+st.markdown("### 💬 Type your message")
 
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    text_input = st.chat_input("Type your message here...")
-
-with col2:
-    audio_file = st.file_uploader("Upload audio file", type=["wav", "mp3", "m4a"])
+# Text input
+user_input = st.chat_input("Type your message here...")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Processing
-if audio_file or text_input:
-    if audio_file:
-        with st.spinner("🎧 Processing audio..."):
-            audio_bytes = audio_file.read()
-            recognizer = sr.Recognizer()
-            
-            # Use tempfile for better compatibility
-            with tempfile.NamedTemporaryFile(suffix=".wav") as temp_file:
-                temp_file.write(audio_bytes)
-                audio_source = sr.AudioFile(temp_file.name)
-                with audio_source as source:
-                    recognizer.adjust_for_ambient_noise(source, duration=0.1)
-                    audio_data = recognizer.record(source)
-                try:
-                    user_text = recognizer.recognize_google(audio_data)
-                    st.success(f"✅ Recognized: {user_text}")
-                except sr.UnknownValueError:
-                    user_text = "Sorry, I couldn't understand that. Please try again."
-                    st.warning(user_text)
-                except sr.RequestError as e:
-                    user_text = f"Error with speech recognition: {e}"
-                    st.error(user_text)
-    else:
-        user_text = text_input
-
+if user_input:
     # Add user message to session state
-    st.session_state.messages.append({"role": "user", "content": user_text})
+    st.session_state.messages.append({"role": "user", "content": user_input})
 
     # System prompt
     system_prompt = """You are a helpful voice assistant.
@@ -207,7 +176,7 @@ User: {user_text}"""
     with st.spinner("🤔 Thinking..."):
         try:
             full_response = ""
-            for chunk in model.generate_content(system_prompt.format(user_text=user_text), stream=True):
+            for chunk in model.generate_content(system_prompt.format(user_text=user_input), stream=True):
                 full_response += chunk.text
 
             # Clean for voice
@@ -277,4 +246,4 @@ with st.sidebar:
     # Add a tip
     st.markdown("---")
     st.markdown("### 💡 Tip")
-    st.caption("For best results, upload clear audio files without background noise.")
+    st.caption("Type your questions clearly for better responses.")
