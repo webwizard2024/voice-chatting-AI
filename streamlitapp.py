@@ -136,8 +136,4 @@ with st.sidebar:
     
     st.caption("✅ Smart answers + honest limits!")
     
-    # Package status
-    st.subheader("Package Status")
-    st.write(f"Speech Recognition: {'✅' if SR_AVAILABLE else '❌'}")
-    st.write(f"Google Generative AI: {'✅' if GENAI_AVAILABLE else '❌'}")
-    st.write(f"gTTS: {'✅' if GTTS_AVAILABLE else '❌'}")
+    
