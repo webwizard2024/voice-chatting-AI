@@ -126,5 +126,5 @@ Portfolio presentation
 
 Author
 
-Aisha Habib
+Ayesha Batool
 Computer Science / Artificial Intelligence
